@@ -1,0 +1,829 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchReview = true;	// search in review
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, review, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/review
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/review/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchReview && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'review') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'review noshow':rev.className = 'review show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/review/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'review nextshow': rev.className = 'review';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchReview=!searchReview;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchReview){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}	
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; width: 50em; margin: auto auto; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { border: 1px gray none; width: 100%; empty-cells: show; border-spacing: 0em 0.1em; margin: 1em 0em; }
+th, td { border: none; padding: 0.5em; vertical-align: top; text-align: justify; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.review td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom-style: none; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include review</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<tbody>
+<tr id="Han2017" class="entry">
+	<td>Han SN and Crespi N (2017), <i>"Semantic service provisioning for smart objects: Integrating IoT applications into the web"</i>, Future Generation Computer Systems. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2017','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1016/j.future.2016.12.037" target="_blank">DOI</a>] [<a href="http://www.sciencedirect.com/science/article/pii/S0167739X16308676" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2017,
+  author = {Son N. Han and Noel Crespi},
+  title = {Semantic service provisioning for smart objects: Integrating IoT applications into the web},
+  journal = {Future Generation Computer Systems},
+  year = {2017},
+  url = {http://www.sciencedirect.com/science/article/pii/S0167739X16308676},
+  doi = {10.1016/j.future.2016.12.037}
+}
+</pre></td>
+</tr>
+<tr id="Hussein2017" class="entry">
+	<td>Hussein D, Han SN, Lee GM, Crespi N and Bertin E (2017), <i>"Towards a dynamic discovery of smart services in the social internet of things"</i>, Computers &amp; Electrical Engineering.  Vol. 58, pp. 429 - 443.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Hussein2017','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1016/j.compeleceng.2016.12.008" target="_blank">DOI</a>] [<a href="http://www.sciencedirect.com/science/article/pii/S0045790616310369" target="_blank">URL</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Hussein2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Hussein2017,
+  author = {Dina Hussein and Son N. Han and Gyu Myoung Lee and Noel Crespi and Emmanuel Bertin},
+  title = {Towards a dynamic discovery of smart services in the social internet of things},
+  journal = {Computers &amp; Electrical Engineering},
+  year = {2017},
+  volume = {58},
+  pages = {429 - 443},
+  url = {http://www.sciencedirect.com/science/article/pii/S0045790616310369},
+  doi = {10.1016/j.compeleceng.2016.12.008}
+}
+</pre></td>
+</tr>
+<tr id="Shu2017" class="entry">
+	<td>Shu L, Mukherjee M, Pechty M, Crespi N and Han SN (2017), <i>"Challenges and Research Issues of Data Management in IoT for Large-scale Petrochemical Plants"</i>, IEEE Access. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Shu2017','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Shu2017" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Shu2017,
+  author = {Lei Shu and Mithun Mukherjee and Michael Pechty and Noel Crespi and Son N. Han},
+  title = {Challenges and Research Issues of Data Management in IoT for Large-scale Petrochemical Plants},
+  journal = {IEEE Access},
+  year = {2017}
+}
+</pre></td>
+</tr>
+<tr id="Ahvar2016" class="entry">
+	<td>Ahvar E, Lee GM, Han SN, Crespi N and Khan I (2016), <i>"Sensor Network-Based and User-Friendly User Location Discovery for Future Smart Homes"</i>, Sensors.  Vol. 16(7), pp. 969. Multidisciplinary Digital Publishing Institute.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Ahvar2016','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Ahvar2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Ahvar2016,
+  author = {Ahvar, Ehsan and Lee, Gyu Myoung and Han, Son N. and Crespi, Noel and Khan, Imran},
+  title = {Sensor Network-Based and User-Friendly User Location Discovery for Future Smart Homes},
+  journal = {Sensors},
+  publisher = {Multidisciplinary Digital Publishing Institute},
+  year = {2016},
+  volume = {16},
+  number = {7},
+  pages = {969}
+}
+</pre></td>
+</tr>
+<tr id="Han2016" class="entry">
+	<td>Han SN, Khan I, Lee GM, Crespi N and Glitho RH (2016), <i>"Service composition for IP smart object using realtime Web protocols: Concept and research challenges"</i>, Computer Standards &amp; Interfaces.  Vol. 43, pp. 79-90.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2016','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2016,
+  author = {Son N. Han and Imran Khan and Gyu Myoung Lee and Noel Crespi and Roch H. Glitho},
+  title = {Service composition for IP smart object using realtime Web protocols: Concept and research challenges},
+  journal = {Computer Standards &amp; Interfaces},
+  year = {2016},
+  volume = {43},
+  pages = {79-90}
+}
+</pre></td>
+</tr>
+<tr id="Khan2016" class="entry">
+	<td>Khan I, Sahoo J, Han SN, Glitho R and Crespi N (2016), <i>"A Genetic Algorithm-based Solution for Efficient In-network Sensor Data Annotation in Virtualized Wireless Sensor Networks"</i>, In 13th IEEE Annual Consumer Communications &amp; Networking Conference (CCNC)., January, 2016. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Khan2016','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Khan2016" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Khan2016,
+  author = {Imran Khan and Jagruti Sahoo and Son N. Han and Roch Glitho and Noel Crespi},
+  title = {A Genetic Algorithm-based Solution for Efficient In-network Sensor Data Annotation in Virtualized Wireless Sensor Networks},
+  booktitle = {13th IEEE Annual Consumer Communications &amp; Networking Conference (CCNC)},
+  year = {2016}
+}
+</pre></td>
+</tr>
+<tr id="Han2015" class="entry">
+	<td>Han SN, Cao QH, Alinia B and Crespi N (2015), <i>"Design, Implementation, and Evaluation of 6LoWPAN for Home and Building Automation in the Internet of Things"</i>, In 2015 IEEE/ACS 12th International Conference on Computer Systems and Applications (AICCSA)., Nov, 2015. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2015','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2015" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2015,
+  author = {Son N. Han and Quyet H. Cao and Bahram Alinia and Noel Crespi},
+  title = {Design, Implementation, and Evaluation of 6LoWPAN for Home and Building Automation in the Internet of Things},
+  booktitle = {2015 IEEE/ACS 12th International Conference on Computer Systems and Applications (AICCSA)},
+  year = {2015}
+}
+</pre></td>
+</tr>
+<tr id="Han2015a" class="entry">
+	<td>Han SN, Lee G, Crespi N, Luong N, Heo K, Brut M and Gatellier P (2015), <i>"DPWSim: A Devices Profile for Web Services (DPWS) Simulator"</i>, IEEE Internet of Things Journal., June, 2015.  Vol. 2(3), pp. 221-229.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2015a','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2015a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2015a,
+  author = {Son N. Han and Lee, G.M. and Crespi, N. and Luong, N.V. and Heo, K. and Brut, M. and Gatellier, P.},
+  title = {DPWSim: A Devices Profile for Web Services (DPWS) Simulator},
+  journal = {IEEE Internet of Things Journal},
+  year = {2015},
+  volume = {2},
+  number = {3},
+  pages = {221-229}
+}
+</pre></td>
+</tr>
+<tr id="Han2015b" class="entry">
+	<td>Han SN, Park S, Lee GM and Crespi N (2015), <i>"Extending the Device Profile for Web Services (DPWS) Standard using a REST Proxy"</i>, IEEE Internet Computing., January, 2015.  Vol. 19(1), pp. 10-17.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2015b','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2015b" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2015b,
+  author = {Son N. Han and Soochang Park and Gyu Myoung Lee and Noel Crespi},
+  title = {Extending the Device Profile for Web Services (DPWS) Standard using a REST Proxy},
+  journal = {IEEE Internet Computing},
+  year = {2015},
+  volume = {19},
+  number = {1},
+  pages = {10-17}
+}
+</pre></td>
+</tr>
+<tr id="Han2015c" class="entry">
+	<td>Han X, Wang L, Han SN, Chen C, Crespi N and Farahbakhsh R (2015), <i>"Link prediction for new users in Social Networks"</i>, In 2015 IEEE International Conference on Communications (ICC)., June, 2015. , pp. 1250-1255.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2015c','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2015c" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2015c,
+  author = {Xiao Han and Leye Wang and Son N. Han and Chao Chen and Crespi, N. and Farahbakhsh, R.},
+  title = {Link prediction for new users in Social Networks},
+  booktitle = {2015 IEEE International Conference on Communications (ICC)},
+  year = {2015},
+  pages = {1250-1255}
+}
+</pre></td>
+</tr>
+<tr id="Hussein2015a" class="entry">
+	<td>Hussein D, Han SN, Lee GM and Crespi N (2015), <i>"Social Cloud-Based Cognitive Reasoning for Task-Oriented Recommendation"</i>, IEEE Cloud Computing., November, 2015.  Vol. 2(6), pp. 10-19.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Hussein2015a','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1109/MCC.2015.117" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Hussein2015a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Hussein2015a,
+  author = {D. Hussein and Son N. Han and G. M. Lee and N. Crespi},
+  title = {Social Cloud-Based Cognitive Reasoning for Task-Oriented Recommendation},
+  journal = {IEEE Cloud Computing},
+  year = {2015},
+  volume = {2},
+  number = {6},
+  pages = {10-19},
+  doi = {10.1109/MCC.2015.117}
+}
+</pre></td>
+</tr>
+<tr id="Hussein2015b" class="entry">
+	<td>Hussein D, Park S, Han SN and Crespi N (2015), <i>"Dynamic Social Structure of Things: A Contextual Approach in CPSS"</i>, IEEE Internet Computing., May, 2015.  Vol. 19(3), pp. 12-20.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Hussein2015b','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Hussein2015b" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Hussein2015b,
+  author = {Dina Hussein and Soochang Park and Son N. Han and Noel Crespi},
+  title = {Dynamic Social Structure of Things: A Contextual Approach in CPSS},
+  journal = {IEEE Internet Computing},
+  year = {2015},
+  volume = {19},
+  number = {3},
+  pages = {12-20}
+}
+</pre></td>
+</tr>
+<tr id="Han2014" class="entry">
+	<td>Han SN, Lee G and Crespi N (2014), <i>"Semantic Context-Aware Service Composition for Building Automation System"</i>, IEEE Transactions on Industrial Informatics., February, 2014.  Vol. 10(1), pp. 752-761.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2014','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2014,
+  author = {Son N. Han and Lee, G.M. and Crespi, N.},
+  title = {Semantic Context-Aware Service Composition for Building Automation System},
+  journal = {IEEE Transactions on Industrial Informatics},
+  year = {2014},
+  volume = {10},
+  number = {1},
+  pages = {752-761}
+}
+</pre></td>
+</tr>
+<tr id="Han2014a" class="entry">
+	<td>Han SN, Lee GM, Crespi N, Nguyen VL, Kyoungwoo H, Brut M and Gatellier P (2014), <i>"DPWSim: A Simulation Toolkit for IoT Applications Using Devices Profile for Web Services"</i>, In 2014 IEEE World Forum on Internet of Things (WF-IoT)., March, 2014. , pp. 544-547.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2014a','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2014a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2014a,
+  author = {Son N. Han and Gyu Myoung Lee and Noel Crespi and Van Luong Nguyen and Heo Kyoungwoo and Mihaela Brut and Patrick Gatellier},
+  title = {DPWSim: A Simulation Toolkit for IoT Applications Using Devices Profile for Web Services},
+  booktitle = {2014 IEEE World Forum on Internet of Things (WF-IoT)},
+  year = {2014},
+  pages = {544-547}
+}
+</pre></td>
+</tr>
+<tr id="Ortiz2014" class="entry">
+	<td>Ortiz A, Hussein D, Park S, Han SN and Crespi N (2014), <i>"The Cluster Between Internet of Things and Social Networks: Review and Research Challenges"</i>, IEEE Internet of Things Journal., June, 2014.  Vol. 1(3), pp. 206-215.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Ortiz2014','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Ortiz2014" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Ortiz2014,
+  author = {Ortiz, A.M. and Hussein, D. and Soochang Park and Son N. Han and Crespi, N.},
+  title = {The Cluster Between Internet of Things and Social Networks: Review and Research Challenges},
+  journal = {IEEE Internet of Things Journal},
+  year = {2014},
+  volume = {1},
+  number = {3},
+  pages = {206-215}
+}
+</pre></td>
+</tr>
+<tr id="Hussein2013" class="entry">
+	<td>Hussein D, Han SN, Han X, Lee GM and Crespi N (2013), <i>"A Framework for Social Device Networking"</i>, In 2013 IEEE International Conference on Distributed Computing in Sensor Systems (DCOSS)., May, 2013. , pp. 356-360.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Hussein2013','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1109/DCOSS.2013.22" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Hussein2013" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Hussein2013,
+  author = {Dina Hussein and Son N. Han and Xiao Han and Gyu Myoung Lee and Noel Crespi},
+  title = {A Framework for Social Device Networking},
+  booktitle = {2013 IEEE International Conference on Distributed Computing in Sensor Systems (DCOSS)},
+  year = {2013},
+  pages = {356-360},
+  doi = {10.1109/DCOSS.2013.22}
+}
+</pre></td>
+</tr>
+<tr id="Han2012" class="entry">
+	<td>Han SN, Lee GM and Crespi N (2012), <i>"Towards Automated Service Composition Using Policy Ontology in Building Automation System"</i>, In 2012 IEEE 9th International Conference on Services Computing (SCC)., June, 2012. , pp. 685-686.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2012','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1109/SCC.2012.42" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2012" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2012,
+  author = {Son N. Han and Gyu Myoung Lee and Crespi, N.},
+  title = {Towards Automated Service Composition Using Policy Ontology in Building Automation System},
+  booktitle = {2012 IEEE 9th International Conference on Services Computing (SCC)},
+  year = {2012},
+  pages = {685-686},
+  doi = {10.1109/SCC.2012.42}
+}
+</pre></td>
+</tr>
+<tr id="Han2012a" class="entry">
+	<td>Han SN, Lee GM and Crespi N (2012), <i>"Context-aware Service Composition Framework in Web-enabled Building Automation System"</i>, In 2012 16th Intl. Conf. on Intelligence in Next Generation Networks (ICIN)., October, 2012. , pp. 128-133.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2012a','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2012a" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2012a,
+  author = {Son N. Han and Gyu Myoung Lee and Crespi, N.},
+  title = {Context-aware Service Composition Framework in Web-enabled Building Automation System},
+  booktitle = {2012 16th Intl. Conf. on Intelligence in Next Generation Networks (ICIN)},
+  year = {2012},
+  pages = {128-133}
+}
+</pre></td>
+</tr>
+<tr id="Choi2011" class="entry">
+	<td>Choi S-H, Han SN, Kim D-Y, Lee B-S and Seo C-H (2011), <i>"The Development of HD-VoIP Application with G.711.1 for Smartphone"</i>, In 2011 3rd International Congress on Ultra Modern Telecommunications and Control Systems and Workshops (ICUMT)., October, 2011. , pp. 1-4.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Choi2011','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Choi2011" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Choi2011,
+  author = {Seung-Han Choi and Son N. Han and Do-Young Kim and Byung-Sun Lee and Chang-Ho Seo},
+  title = {The Development of HD-VoIP Application with G.711.1 for Smartphone},
+  booktitle = {2011 3rd International Congress on Ultra Modern Telecommunications and Control Systems and Workshops (ICUMT)},
+  year = {2011},
+  pages = {1-4}
+}
+</pre></td>
+</tr>
+<tr id="Han2011" class="entry">
+	<td>Han SN, So WS and Kim DY (2011), <i>"An Optimization of ITU-T Wideband Codec G.711.1 on ARM Processors"</i>, In 2011 IEEE Consumer Communications and Networking Conference (CCNC)., January, 2011. , pp. 1122-1123.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2011','bibtex')">BibTeX</a>] [<a href="http://doi.org/10.1109/CCNC.2011.5766348" target="_blank">DOI</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2011" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@inproceedings{Han2011,
+  author = {Son N. Han and Woon Seob So and Do Young Kim},
+  title = {An Optimization of ITU-T Wideband Codec G.711.1 on ARM Processors},
+  booktitle = {2011 IEEE Consumer Communications and Networking Conference (CCNC)},
+  year = {2011},
+  pages = {1122-1123},
+  doi = {10.1109/CCNC.2011.5766348}
+}
+</pre></td>
+</tr>
+<tr id="Han2010" class="entry">
+	<td>Han SN and Kim SW (2010), <i>"Design and Implementation of AR Model based Automatic Identification and Restoration Scheme for Line Scratches in Old Films"</i>, The KIPS Transactions: Part B., February, 2010.  Vol. 17B(1), pp. 47-54.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2010','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2010" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2010,
+  author = {Son N. Han and Seong Whan Kim},
+  title = {Design and Implementation of AR Model based Automatic Identification and Restoration Scheme for Line Scratches in Old Films},
+  journal = {The KIPS Transactions: Part B},
+  year = {2010},
+  volume = {17B},
+  number = {1},
+  pages = {47-54}
+}
+</pre></td>
+</tr>
+<tr id="Han2009" class="entry">
+	<td>Han SN, Kim JS and Kim SW (2009), <i>"Coordinated Differential Movement for Dynamic Coverage Maintenance of Mobile Wireless Sensor Network"</i>, Information: An International Interdisciplinary Journal., July, 2009.  Vol. 12(4), pp. 861-873.
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han2009','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han2009" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han2009,
+  author = {Son N. Han and Jin Suk Kim and Seong Whan Kim},
+  title = {Coordinated Differential Movement for Dynamic Coverage Maintenance of Mobile Wireless Sensor Network},
+  journal = {Information: An International Interdisciplinary Journal},
+  year = {2009},
+  volume = {12},
+  number = {4},
+  pages = {861-873}
+}
+</pre></td>
+</tr>
+<tr id="Han:UnderReviewa" class="entry">
+	<td>Han SN, Lee GM and Crespi N (Under Review), <i>"Interconnecting IoT and regular IP Networks: towards the Next Web Applications"</i>, IEEE Wireless Communications. 
+	<p class="infolinks"> [<a href="javascript:toggleInfo('Han:UnderReviewa','bibtex')">BibTeX</a>]</p>
+	</td>
+</tr>
+<tr id="bib_Han:UnderReviewa" class="bibtex noshow">
+<td><b>BibTeX</b>:
+<pre>
+@article{Han:UnderReviewa,
+  author = {Son N. Han and Gyu Myoung Lee and Noel Crespi},
+  title = {Interconnecting IoT and regular IP Networks: towards the Next Web Applications},
+  journal = {IEEE Wireless Communications},
+  year = {Under Review}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 16/05/2017.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
